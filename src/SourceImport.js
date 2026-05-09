@@ -10,160 +10,170 @@ const LNBR_SEQ = /(?:\r\n|\n|\r)/g;
 const IMPORT_SCRIPT = /^\s*import(?:\s+(.+)\s+from)?\s+"([^"]+)"\s*;?$/;
 const IMPORT_ASSERT = /^\s*import\s+([a-zA-Z0-9_$]+)\s+from\s+"([^"]+)"\s+assert\s+\{\s*type:\s*"([^"]+)"\s*\}\s*;?$/;
 
-const IMPORT_HANDLERS = new Map();
-const IMPORT_PREREQS = new Map();
+class SourceImport {
 
-export function registerImportHandler(typeName, handler, prereq) {
-    if (typeof handler === "function") {
-        IMPORT_HANDLERS.set(typeName, handler);
-    } else {
-        IMPORT_HANDLERS.delete(typeName);
-    }
-    if (typeof prereq === "function") {
-        IMPORT_PREREQS.set(typeName, prereq);
-    } else {
-        IMPORT_PREREQS.delete(typeName);
-    }
-}
+    #importHandlers = new Map();
 
-export default function sourceImport() {
-    // augment
-    const transformStream = new Transform({objectMode: true});
-    transformStream._transform = function(file, encoding, callback) {
-        const contents = augmentFile(file.path, String(file.contents));
-        if (file.isBuffer() === true) {
-            file.contents = Buffer.from(contents);
+    #importPrereqs = new Map();
+
+    compiler() {
+        const transformStream = new Transform({objectMode: true});
+        transformStream._transform = (file, encoding, callback) => {
+            const contents = this.#augmentFile(file.path, String(file.contents));
+            if (file.isBuffer() === true) {
+                file.contents = Buffer.from(contents);
+            } else {
+                file.contents = contents;
+            }
+            callback(null, file);
+        };
+        return transformStream;
+    }
+
+    registerImportHandler(typeName, handler, prereq) {
+        if (typeof handler === "function") {
+            this.#importHandlers.set(typeName, handler);
         } else {
-            file.contents = contents;
+            this.#importHandlers.delete(typeName);
         }
-        callback(null, file);
-    };
-    return transformStream;
-}
+        if (typeof prereq === "function") {
+            this.#importPrereqs.set(typeName, prereq);
+        } else {
+            this.#importPrereqs.delete(typeName);
+        }
+    }
 
-function augmentFile(sourcePath, fileContent) {
-    const sourceDir = path.dirname(sourcePath);
-    // lists
-    const importedEntries = [];
-    const prereqEntries = new Set();
-    // analyzer
-    const script = fileContent.split(LNBR_SEQ).map((string) => {
+    #augmentFile(sourcePath, fileContent) {
+        const sourceDir = path.dirname(sourcePath);
+        // lists
+        const importedEntries = [];
+        const prereqEntries = new Set();
+        // analyzer
+        const script = fileContent.split(LNBR_SEQ).map((string) => {
         // check asserted import
-        const isAssertImport = IMPORT_ASSERT.exec(string);
-        if (isAssertImport != null) {
-            const name = isAssertImport[1];
-            const contentPath = isAssertImport[2];
-            const assertType = isAssertImport[3];
-            if (IMPORT_PREREQS.has(assertType)) {
-                const prereq = IMPORT_PREREQS.get(assertType);
-                prereqEntries.add(prereq);
+            const isAssertImport = IMPORT_ASSERT.exec(string);
+            if (isAssertImport != null) {
+                const name = isAssertImport[1];
+                const contentPath = isAssertImport[2];
+                const assertType = isAssertImport[3];
+                if (this.#importPrereqs.has(assertType)) {
+                    const prereq = this.#importPrereqs.get(assertType);
+                    prereqEntries.add(prereq);
+                }
+                if (this.#importHandlers.has(assertType)) {
+                    importedEntries.push({
+                        type: assertType,
+                        name,
+                        contentPath
+                    });
+                    return null;
+                }
+                return string;
             }
-            if (IMPORT_HANDLERS.has(assertType)) {
-                importedEntries.push({
-                    type: assertType,
-                    name,
-                    contentPath
-                });
-                return null;
-            }
-            return string;
-        }
-        // check missing .js file extension
-        const isScriptImport = IMPORT_SCRIPT.exec(string);
-        if (isScriptImport != null) {
-            const variables = isScriptImport[1];
-            const filePath = isScriptImport[2];
-            if (!filePath.endsWith(".js")) {
+            // check missing .js file extension
+            const isScriptImport = IMPORT_SCRIPT.exec(string);
+            if (isScriptImport != null) {
+                const variables = isScriptImport[1];
+                const filePath = isScriptImport[2];
+                if (!filePath.endsWith(".js")) {
                 // TODO check if folder or file
                 // - file relative check if starting with "."
                 // - project relative check if starting with "/"
-                if (variables == null) {
-                    return `import "${filePath}.js";`;
+                    if (variables == null) {
+                        return `import "${filePath}.js";`;
+                    }
+                    return `import ${variables} from "${filePath}.js";`;
                 }
-                return `import ${variables} from "${filePath}.js";`;
             }
-        }
-        return string;
-    }).filter((e) => e != null).join("\n");
+            return string;
+        }).filter((e) => e != null).join("\n");
 
-    let result = "";
-    if (importedEntries.length) {
-        result += "/* ===================== START AUTOGENERATED SOURCE IMPORT ===================== */\n\n";
+        let result = "";
+        if (importedEntries.length) {
+            result += "/* ===================== START AUTOGENERATED SOURCE IMPORT ===================== */\n\n";
 
-        if (prereqEntries.size) {
-            for (const prereq of prereqEntries) {
-                result += prereq();
+            if (prereqEntries.size) {
+                for (const prereq of prereqEntries) {
+                    result += prereq();
+                    result += "\n";
+                }
                 result += "\n";
             }
-            result += "\n";
-        }
 
-        for (const importEntry of importedEntries) {
-            const {
-                type, name, contentPath
-            } = importEntry;
-            const importHandler = IMPORT_HANDLERS.get(type);
-            if (importHandler) {
-                result += importHandler(sourceDir, name, contentPath);
-                result += "\n";
+            for (const importEntry of importedEntries) {
+                const {
+                    type, name, contentPath
+                } = importEntry;
+                const importHandler = this.#importHandlers.get(type);
+                if (importHandler) {
+                    result += importHandler(sourceDir, name, contentPath);
+                    result += "\n";
+                }
             }
-        }
 
-        result += "/* =====================  END AUTOGENERATED SOURCE IMPORT  ===================== */\n\n";
+            result += "/* =====================  END AUTOGENERATED SOURCE IMPORT  ===================== */\n\n";
+        }
+        return result + script;
     }
-    return result + script;
+
 }
 
-///////////////////////////////
-// register default handlers //
-///////////////////////////////
-registerImportHandler("text", (sourceDir, name, contentPath) => {
-    const resolvedPath = path.resolve(sourceDir, contentPath);
-    // if the file exists
-    if (fs.existsSync(resolvedPath)) {
-        const fileContent = fs.readFileSync(resolvedPath).toString();
-        return `const ${name} = \`${fileContent.replace(/\\/g, "\\\\")}\`;\n`;
-    }
-    return `throw new Error("the imported file ${resolvedPath} does not exist");\n`;
-});
+if (!global.SourceImport) {
+    global.SourceImport = new SourceImport();
 
-registerImportHandler("json", (sourceDir, name, contentPath) => {
-    const resolvedPath = path.resolve(sourceDir, contentPath);
-    // if the file exists
-    if (fs.existsSync(resolvedPath)) {
-        const fileContent = fs.readFileSync(resolvedPath).toString();
-        try {
-            jsonParse(fileContent);
-            return `const ${name} = ${fileContent.replace(/\\/g, "\\\\")};\n`;
-        } catch {
-            return `throw new Error("the imported file ${resolvedPath} is not in JSON format");\n`;
+    ///////////////////////////////
+    // register default handlers //
+    ///////////////////////////////
+    global.SourceImport.registerImportHandler("text", (sourceDir, name, contentPath) => {
+        const resolvedPath = path.resolve(sourceDir, contentPath);
+        // if the file exists
+        if (fs.existsSync(resolvedPath)) {
+            const fileContent = fs.readFileSync(resolvedPath).toString();
+            return `const ${name} = \`${fileContent.replace(/\\/g, "\\\\")}\`;\n`;
         }
-    }
-    return `throw new Error("the imported file ${resolvedPath} does not exist");\n`;
-});
+        return `throw new Error("the imported file ${resolvedPath} does not exist");\n`;
+    });
 
-registerImportHandler("json-folder", (sourceDir, name, contentPath) => {
-    const resolvedFolderPath = path.resolve(sourceDir, contentPath);
-    // if the folder exists
-    if (fs.existsSync(resolvedFolderPath)) {
-        const typeDefs = [];
-        const folderContent = fs.readdirSync(resolvedFolderPath);
-        for (const filePath of folderContent) {
-            const resolvedFilePath = path.resolve(resolvedFolderPath, filePath);
-            // if the file exists
-            if (fs.existsSync(resolvedFilePath)) {
-                const parsedPath = path.parse(filePath);
-                const name = parsedPath.name;
-                const fileContent = fs.readFileSync(resolvedFilePath).toString();
-                try {
-                    jsonParse(fileContent);
-                    typeDefs.push(`    ${name}: ${fileContent.replace(/\\/g, "\\\\").split("\n").map((l) => `    ${l}`).join("\n").slice(4)}`);
-                } catch {
-                    // ignore
-                }
+    global.SourceImport.registerImportHandler("json", (sourceDir, name, contentPath) => {
+        const resolvedPath = path.resolve(sourceDir, contentPath);
+        // if the file exists
+        if (fs.existsSync(resolvedPath)) {
+            const fileContent = fs.readFileSync(resolvedPath).toString();
+            try {
+                jsonParse(fileContent);
+                return `const ${name} = ${fileContent.replace(/\\/g, "\\\\")};\n`;
+            } catch {
+                return `throw new Error("the imported file ${resolvedPath} is not in JSON format");\n`;
             }
         }
-        return `const ${name} = {\n${typeDefs.join(",\n")}\n};\n`;
-    }
-    return `throw new Error("the imported folder ${resolvedFolderPath} does not exist");\n`;
-});
+        return `throw new Error("the imported file ${resolvedPath} does not exist");\n`;
+    });
+
+    global.SourceImport.registerImportHandler("json-folder", (sourceDir, name, contentPath) => {
+        const resolvedFolderPath = path.resolve(sourceDir, contentPath);
+        // if the folder exists
+        if (fs.existsSync(resolvedFolderPath)) {
+            const typeDefs = [];
+            const folderContent = fs.readdirSync(resolvedFolderPath);
+            for (const filePath of folderContent) {
+                const resolvedFilePath = path.resolve(resolvedFolderPath, filePath);
+                // if the file exists
+                if (fs.existsSync(resolvedFilePath)) {
+                    const parsedPath = path.parse(filePath);
+                    const name = parsedPath.name;
+                    const fileContent = fs.readFileSync(resolvedFilePath).toString();
+                    try {
+                        jsonParse(fileContent);
+                        typeDefs.push(`    ${name}: ${fileContent.replace(/\\/g, "\\\\").split("\n").map((l) => `    ${l}`).join("\n").slice(4)}`);
+                    } catch {
+                    // ignore
+                    }
+                }
+            }
+            return `const ${name} = {\n${typeDefs.join(",\n")}\n};\n`;
+        }
+        return `throw new Error("the imported folder ${resolvedFolderPath} does not exist");\n`;
+    });
+}
+
+export default global.SourceImport;
