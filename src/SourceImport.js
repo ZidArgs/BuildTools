@@ -8,7 +8,7 @@ export const PACKAGE_NAME = resolvePackageName(import.meta.dirname);
 
 const LNBR_SEQ = /(?:\r\n|\n|\r)/g;
 const IMPORT_SCRIPT = /^\s*import(?:\s+(.+)\s+from)?\s+"([^"]+)"\s*;?$/;
-const IMPORT_ASSERT = /^\s*import\s+([a-zA-Z0-9_$]+)\s+from\s+"([^"]+)"\s+assert\s+\{\s*type:\s*"([^"]+)"\s*\}\s*;?$/;
+const IMPORT_ASSERT = /^\s*import\s+([a-zA-Z0-9_$]+)\s+from\s+"([^"]+)"\s+(?:assert|with)\s+\{\s*type:\s*"([^"]+)"\s*\}\s*;?$/;
 
 class SourceImport {
 

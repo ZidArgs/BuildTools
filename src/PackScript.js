@@ -15,9 +15,7 @@ export function packScript() {
                 minimize: false
             },
             stats: "minimal",
-            infrastructureLogging: {
-                level: "error"
-            }
+            infrastructureLogging: {level: "error"}
         })).pipe(through((packedFile) => {
             let contents = packedFile.contents;
             if (packedFile.isBuffer() === true) {
