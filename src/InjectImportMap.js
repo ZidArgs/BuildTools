@@ -2,7 +2,7 @@ import {Transform} from "stream";
 
 const IMPORTMAP = /<script type="importmap">.*?<\/script>/s;
 
-export default class InjectImportMap {
+class InjectImportMap {
 
     #importMap = {"imports": {}};
 
@@ -29,3 +29,5 @@ export default class InjectImportMap {
     }
 
 }
+
+export default new InjectImportMap();
