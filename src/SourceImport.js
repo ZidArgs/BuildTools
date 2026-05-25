@@ -50,7 +50,7 @@ class SourceImport {
         const prereqEntries = new Set();
         // analyzer
         const script = fileContent.split(LNBR_SEQ).map((string) => {
-        // check asserted import
+            // check asserted import
             const isAssertImport = IMPORT_ASSERT.exec(string);
             if (isAssertImport != null) {
                 const name = isAssertImport[1];
