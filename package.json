@@ -2,14 +2,17 @@
   "name": "@zidargs/buildtools",
   "version": "1.2.1",
   "description": "Build tools for JS projects",
-  "type": "module",
+  "author": "Denis Weiß (ZidArgs)",
+  "license": "MIT",
+  "homepage": "https://github.com/ZidArgs/BuildTools",
   "repository": {
     "type": "git",
     "url": "git+ssh://git@github.com:ZidArgs/BuildTools.git"
   },
-  "author": "Denis Weiß (ZidArgs)",
-  "license": "MIT",
-  "homepage": "https://github.com/ZidArgs/BuildTools",
+  "bugs": {
+    "url": "https://github.com/ZidArgs/BuildTools/issues"
+  },
+  "type": "module",
   "dependencies": {
     "del": "^5.1.0",
     "glob-all": "^3.1.0",
